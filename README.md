@@ -16,21 +16,21 @@
 
 ---
 
-## 📌 Overview
+##  Overview
 
 **DeepShield** classifies images as **REAL or FAKE** using a hybrid approach combining:
 
 | Component | Description |
 |-----------|-------------|
-| 🧠 **CNN** | Spatial feature extraction via EfficientNet |
-| 📡 **FFT Analysis** | Frequency-domain artifact detection |
-| 🔍 **Grad-CAM** | Visual explainability heatmaps |
+|  **CNN** | Spatial feature extraction via EfficientNet |
+|  **FFT Analysis** | Frequency-domain artifact detection |
+|  **Grad-CAM** | Visual explainability heatmaps |
 
 Deployed as a **dark-themed interactive Streamlit dashboard** with real-time predictions.
 
 ---
 
-## 🏗️ Architecture
+##  Architecture
 
 ```
 Input Image
@@ -52,20 +52,20 @@ Grad-CAM Heatmap (Explainability)
 
 ---
 
-## ✨ Features
+##  Features
 
-- 📤 **Upload & Analyze** — Drag and drop any face image for instant prediction
-- 🖼️ **Demo Images** — Try preloaded sample images from the sidebar
-- ⚡ **Real-Time Prediction** — Live inference with loading spinner
-- 🔀 **Ensemble Scoring** — CNN + FFT scores combined for higher accuracy
-- 🌡️ **Grad-CAM Heatmap** — Visual explanation of model decisions
-- 📦 **Batch Processing** — Analyze multiple images at once
-- 📜 **Session History** — Track all predictions in a session
-- 📥 **CSV Export** — Download your results
+-  **Upload & Analyze** — Drag and drop any face image for instant prediction
+-  **Demo Images** — Try preloaded sample images from the sidebar
+-  **Real-Time Prediction** — Live inference with loading spinner
+-  **Ensemble Scoring** — CNN + FFT scores combined for higher accuracy
+-  **Grad-CAM Heatmap** — Visual explanation of model decisions
+-  **Batch Processing** — Analyze multiple images at once
+-  **Session History** — Track all predictions in a session
+-  **CSV Export** — Download your results
 
 ---
 
-## 📁 Project Structure
+##  Project Structure
 
 ```
 deepfake/
@@ -89,7 +89,7 @@ deepfake/
 
 ---
 
-## ⚙️ Local Setup
+##  Local Setup
 
 ```bash
 # 1. Clone the repository
@@ -110,7 +110,7 @@ streamlit run streamlit_app.py
 
 ---
 
-## 🧪 How to Use
+##  How to Use
 
 ### 🔹 Upload an Image
 1. Click **Browse files** in the main panel
@@ -124,21 +124,21 @@ streamlit run streamlit_app.py
 
 ---
 
-## 📊 Output
+##  Output
 
 For each image, DeepShield provides:
 
 | Output | Description |
 |--------|-------------|
-| ✅ / ❌ **Verdict** | REAL or FAKE classification |
-| 📈 **Confidence Score** | Overall prediction confidence |
-| 🧠 **CNN Score** | Spatial feature analysis result |
-| 📡 **FFT Score** | Frequency domain analysis result |
-| 🌡️ **Grad-CAM Heatmap** | Visual explanation of the decision |
+|   **Verdict** | REAL or FAKE classification |
+|  **Confidence Score** | Overall prediction confidence |
+|  **CNN Score** | Spatial feature analysis result |
+|  **FFT Score** | Frequency domain analysis result |
+|  **Grad-CAM Heatmap** | Visual explanation of the decision |
 
 ---
 
-## 📉 Model Performance
+##  Model Performance
 
 | Metric | Score |
 |--------|-------|
@@ -149,7 +149,7 @@ For each image, DeepShield provides:
 
 ---
 
-## 🛠️ Tech Stack
+##  Tech Stack
 
 | Layer | Technology |
 |-------|------------|
@@ -163,16 +163,16 @@ For each image, DeepShield provides:
 
 ---
 
-## 💡 Key Highlights
+##  Key Highlights
 
-- 🔀 **Hybrid CNN + FFT** approach improves detection accuracy over single-model baselines
-- 🔍 **Grad-CAM** provides transparent, explainable AI insights into model decisions
-- 🪶 **Lightweight model** — suitable for CPU deployment with no GPU required
-- ☁️ **Fully deployed** — complete ML pipeline from Model → Backend → UI → Cloud
+-  **Hybrid CNN + FFT** approach improves detection accuracy over single-model baselines
+-  **Grad-CAM** provides transparent, explainable AI insights into model decisions
+-  **Lightweight model** — suitable for CPU deployment with no GPU required
+-  **Fully deployed** — complete ML pipeline from Model → Backend → UI → Cloud
 
 ---
 
-## ⚠️ Limitations
+##  Limitations
 
 - Works best on **clear, front-facing** face images
 - Less accurate on **diffusion-generated** (e.g., Stable Diffusion) images
@@ -181,16 +181,16 @@ For each image, DeepShield provides:
 
 ---
 
-## 🚀 Future Improvements
+##  Future Improvements
 
-- 🎥 Video deepfake detection
-- 📱 Mobile-friendly responsive UI
-- ☁️ REST API deployment
-- 📊 Enhanced visualization & analytics dashboard
+-  Video deepfake detection
+-  Mobile-friendly responsive UI
+-  REST API deployment
+-  Enhanced visualization & analytics dashboard
 
 ---
 
-## 👩‍💻 Author
+##  Author
 
 <div align="center">
 
@@ -210,6 +210,6 @@ For each image, DeepShield provides:
 
 **Model → Backend → UI → Cloud**
 
-⭐ *If you found this useful, consider giving it a star!*
+ *If you found this useful, consider giving it a star!*
 
 </div>
