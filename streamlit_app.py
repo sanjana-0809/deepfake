@@ -85,9 +85,19 @@ hr { border-color:#1e2433; }
 @st.cache_resource(show_spinner=False)
 def load_model():
     from tensorflow.keras.models import load_model as km
-    for p in ["deepfake_efficientnet.h5","deepfake_efficientnet_best.h5","deepfake_cnn_model.h5"]:
-        full = os.path.join(ROOT, p)
-        if os.path.isfile(full): return km(full)
+    
+    possible_paths = [
+        "deepfake_efficientnet_best.h5",
+        "deepfake_efficientnet.h5",
+        "deepfake_cnn_model.h5",
+        os.path.join(ROOT, "deepfake_efficientnet_best.h5"),
+        os.path.join(ROOT, "deepfake_efficientnet.h5"),
+    ]
+    
+    for path in possible_paths:
+        if os.path.isfile(path):
+            return km(path)
+    
     return None
 
 
