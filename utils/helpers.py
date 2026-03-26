@@ -13,8 +13,8 @@ from typing import Optional
 # Ensemble scoring
 # ---------------------------------------------------------------------------
 
-CNN_WEIGHT = 0.70
-FFT_WEIGHT = 0.30
+CNN_WEIGHT = 1.00
+FFT_WEIGHT = 0.00
 
 
 def compute_final_score(cnn_score: float, fft_score: float) -> float:
@@ -56,7 +56,7 @@ def get_detection_hint(final_score: float) -> str:
     elif final_score >= 0.65:
         return "Likely AI-generated — Diffusion model pattern found"
     elif final_score >= 0.50:
-        return "Borderline — Possible manipulation, low confidence"
+        return "Borderline — Low confidence, verify manually"
     else:
         return "Natural image — No manipulation detected"
 

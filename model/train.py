@@ -1,5 +1,6 @@
 """
-train.py — Full Two-Phase Training Script
+train.py — Full Two-Phase Training Script (Memory-Safe Version)
+Uses ImageDataGenerator to load images in batches — no RAM overflow.
 
 Phase 1 (10 epochs): Only the custom classification head is trained.
               EfficientNetB4 base is frozen.
@@ -24,110 +25,102 @@ import numpy as np
 import matplotlib
 matplotlib.use("Agg")          # non-interactive backend for Windows
 import matplotlib.pyplot as plt
-from sklearn.model_selection import train_test_split
 from tensorflow.keras.callbacks import (
     EarlyStopping, ReduceLROnPlateau, ModelCheckpoint
 )
+from tensorflow.keras.preprocessing.image import ImageDataGenerator
 import tensorflow as tf
 
 # Allow running from the project root
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from model.model import build_efficientnet_model, build_lightweight_cnn, unfreeze_top_layers
-from utils.preprocess import load_image_rgb
 
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
 
-TRAIN_DIR   = "archive/real_vs_fake/real-vs-fake/train"
-VALID_DIR   = "archive/real_vs_fake/real-vs-fake/valid"
-TEST_DIR    = "archive/real_vs_fake/real-vs-fake/test"
+TRAIN_DIR     = "archive/real_vs_fake/real-vs-fake/train"
+VALID_DIR     = "archive/real_vs_fake/real-vs-fake/valid"
+TEST_DIR      = "archive/real_vs_fake/real-vs-fake/test"
 
-IMAGE_SIZE  = (224, 224)
-BATCH_SIZE  = 16          # reduced for CPU
-LIMIT_TRAIN = 2000        # images per class (None = all)
-LIMIT_VALID = 500
-LIMIT_TEST  = 500
+IMAGE_SIZE    = (224, 224)
+BATCH_SIZE    = 8           # tuned for 8 GB RAM with limited free memory
 
 PHASE1_EPOCHS = 10
 PHASE2_EPOCHS = 5
-VAL_SPLIT     = 0.2
 
-MODEL_TYPE    = "efficientnet"   # "efficientnet" | "cnn"
+MODEL_TYPE    = "cnn"       # "efficientnet" | "cnn"
 BEST_WEIGHTS  = "deepfake_efficientnet_best.h5"
 FINAL_MODEL   = "deepfake_efficientnet.h5"
 HISTORY_IMAGE = "training_history.png"
 
 
 # ---------------------------------------------------------------------------
-# Data loading
+# Data generators — loads images from disk in batches, no RAM overflow
 # ---------------------------------------------------------------------------
 
-def load_images_from_subfolders(base_folder, image_size=IMAGE_SIZE,
-                                 limit_per_class=None):
+def make_generators():
     """
-    Load real/fake images from the standard folder structure.
-
-    Expected layout:
-        base_folder/
-            real/   ← label 0
-            fake/   ← label 1
+    Returns train, validation, and test generators.
+    Images are loaded batch-by-batch from disk — never all at once.
     """
-    images, labels = [], []
-    classes = {"real": 0, "fake": 1}
 
-    for label_name, label in classes.items():
-        folder_path = os.path.join(base_folder, label_name)
-        if not os.path.isdir(folder_path):
-            print(f"[WARN] Folder not found: {folder_path} — skipping.")
-            continue
+    # Training generator with augmentation to improve generalisation
+    train_datagen = ImageDataGenerator(
+        rescale=1.0 / 255.0,
+        horizontal_flip=True,
+        rotation_range=10,
+        zoom_range=0.1,
+        width_shift_range=0.05,
+        height_shift_range=0.05,
+    )
 
-        count = 0
-        for filename in sorted(os.listdir(folder_path)):
-            if not filename.lower().endswith((".jpg", ".jpeg", ".png", ".webp")):
-                continue
-            filepath = os.path.join(folder_path, filename)
-            try:
-                img = load_image_rgb(filepath)
-                import cv2
-                img = cv2.resize(img, image_size, interpolation=cv2.INTER_AREA)
-                img = img.astype(np.float32) / 255.0
-                images.append(img)
-                labels.append(label)
-                count += 1
-                if limit_per_class and count >= limit_per_class:
-                    break
-            except Exception as e:
-                print(f"[SKIP] {filepath}: {e}")
-                continue
+    # Validation and test — only rescale, no augmentation
+    eval_datagen = ImageDataGenerator(rescale=1.0 / 255.0)
 
-        print(f"  Loaded {count} '{label_name}' images from {folder_path}")
+    train_gen = train_datagen.flow_from_directory(
+        TRAIN_DIR,
+        target_size=IMAGE_SIZE,
+        batch_size=BATCH_SIZE,
+        class_mode="binary",        # real=0, fake=1
+        shuffle=True,
+        seed=42,
+    )
 
-    if not images:
-        raise RuntimeError(f"No images loaded from {base_folder}. "
-                           "Check your dataset path.")
+    valid_gen = eval_datagen.flow_from_directory(
+        VALID_DIR,
+        target_size=IMAGE_SIZE,
+        batch_size=BATCH_SIZE,
+        class_mode="binary",
+        shuffle=False,
+    )
 
-    return np.array(images, dtype=np.float32), np.array(labels, dtype=np.float32)
+    test_gen = eval_datagen.flow_from_directory(
+        TEST_DIR,
+        target_size=IMAGE_SIZE,
+        batch_size=BATCH_SIZE,
+        class_mode="binary",
+        shuffle=False,
+    )
+
+    return train_gen, valid_gen, test_gen
 
 
 # ---------------------------------------------------------------------------
 # Callbacks factory
 # ---------------------------------------------------------------------------
 
-def make_callbacks(best_weights_path: str, phase: int = 1) -> list:
-    monitor_early = "val_auc"
-    monitor_lr    = "val_loss"
-
+def make_callbacks(best_weights_path: str) -> list:
     early_stop = EarlyStopping(
-        monitor=monitor_early,
+        monitor="val_auc",
         patience=3,
         mode="max",
         restore_best_weights=True,
         verbose=1,
     )
     reduce_lr = ReduceLROnPlateau(
-        monitor=monitor_lr,
+        monitor="val_loss",
         factor=0.5,
         patience=2,
         min_lr=1e-7,
@@ -135,7 +128,7 @@ def make_callbacks(best_weights_path: str, phase: int = 1) -> list:
     )
     checkpoint = ModelCheckpoint(
         filepath=best_weights_path,
-        monitor=monitor_early,
+        monitor="val_auc",
         mode="max",
         save_best_only=True,
         verbose=1,
@@ -148,15 +141,12 @@ def make_callbacks(best_weights_path: str, phase: int = 1) -> list:
 # ---------------------------------------------------------------------------
 
 def plot_history(histories: list, save_path: str = HISTORY_IMAGE):
-    """
-    Plot accuracy and loss curves for Phase 1 + Phase 2 concatenated.
-    """
     acc, val_acc, loss, val_loss = [], [], [], []
     for h in histories:
-        acc     += h.history["accuracy"]
-        val_acc += h.history["val_accuracy"]
-        loss    += h.history["loss"]
-        val_loss+= h.history["val_loss"]
+        acc      += h.history["accuracy"]
+        val_acc  += h.history["val_accuracy"]
+        loss     += h.history["loss"]
+        val_loss += h.history["val_loss"]
 
     epochs = range(1, len(acc) + 1)
     phase2_start = len(histories[0].history["accuracy"]) if len(histories) > 1 else None
@@ -164,24 +154,20 @@ def plot_history(histories: list, save_path: str = HISTORY_IMAGE):
     fig, axes = plt.subplots(1, 2, figsize=(14, 5))
     fig.suptitle("Deepfake Detection — Training History", fontsize=14, fontweight="bold")
 
-    # Accuracy
     axes[0].plot(epochs, acc,     "b-o", markersize=4, label="Train Accuracy")
     axes[0].plot(epochs, val_acc, "r-o", markersize=4, label="Val Accuracy")
     if phase2_start:
-        axes[0].axvline(x=phase2_start + 0.5, color="grey", linestyle="--",
-                        label="Fine-tune start")
+        axes[0].axvline(x=phase2_start + 0.5, color="grey", linestyle="--", label="Fine-tune start")
     axes[0].set_title("Model Accuracy")
     axes[0].set_xlabel("Epoch")
     axes[0].set_ylabel("Accuracy")
     axes[0].legend()
     axes[0].grid(True, alpha=0.3)
 
-    # Loss
     axes[1].plot(epochs, loss,     "b-o", markersize=4, label="Train Loss")
     axes[1].plot(epochs, val_loss, "r-o", markersize=4, label="Val Loss")
     if phase2_start:
-        axes[1].axvline(x=phase2_start + 0.5, color="grey", linestyle="--",
-                        label="Fine-tune start")
+        axes[1].axvline(x=phase2_start + 0.5, color="grey", linestyle="--", label="Fine-tune start")
     axes[1].set_title("Model Loss")
     axes[1].set_xlabel("Epoch")
     axes[1].set_ylabel("Loss")
@@ -203,28 +189,13 @@ def train():
     print(" Deepfake Detection — Training Script")
     print("=" * 60)
 
-    # ── Load data ──────────────────────────────────────────────────────────
-    print("\n[1/5] Loading training data …")
-    X_train_all, y_train_all = load_images_from_subfolders(
-        TRAIN_DIR, IMAGE_SIZE, LIMIT_TRAIN)
+    # ── Create data generators (no RAM loading!) ──────────────────────────
+    print("\n[1/5] Setting up data generators …")
+    train_gen, valid_gen, test_gen = make_generators()
 
-    print("[1/5] Loading validation data …")
-    X_valid_all, y_valid_all = load_images_from_subfolders(
-        VALID_DIR, IMAGE_SIZE, LIMIT_VALID)
-
-    print("[1/5] Loading test data …")
-    X_test, y_test = load_images_from_subfolders(
-        TEST_DIR, IMAGE_SIZE, LIMIT_TEST)
-
-    # Combine train + valid, then re-split
-    X_combined = np.concatenate([X_train_all, X_valid_all])
-    y_combined = np.concatenate([y_train_all, y_valid_all])
-    X_train, X_val, y_train, y_val = train_test_split(
-        X_combined, y_combined, test_size=VAL_SPLIT, random_state=42,
-        stratify=y_combined
-    )
-
-    print(f"  Train: {len(X_train)} | Val: {len(X_val)} | Test: {len(X_test)}")
+    print(f"  Train batches : {len(train_gen)}  ({train_gen.samples} images)")
+    print(f"  Valid batches : {len(valid_gen)}  ({valid_gen.samples} images)")
+    print(f"  Test  batches : {len(test_gen)}  ({test_gen.samples} images)")
 
     # ── Build model ────────────────────────────────────────────────────────
     print(f"\n[2/5] Building {MODEL_TYPE} model …")
@@ -240,14 +211,12 @@ def train():
     model.summary(line_length=90)
 
     # ── Phase 1 ───────────────────────────────────────────────────────────
-    print(f"\n[3/5] Phase 1 — Training classification head ({PHASE1_EPOCHS} epochs) …")
-    callbacks_p1 = make_callbacks(BEST_WEIGHTS, phase=1)
+    print(f"\n[3/5] Phase 1 — Training ({PHASE1_EPOCHS} epochs) …")
     history1 = model.fit(
-        X_train, y_train,
-        validation_data=(X_val, y_val),
+        train_gen,
+        validation_data=valid_gen,
         epochs=PHASE1_EPOCHS,
-        batch_size=BATCH_SIZE,
-        callbacks=callbacks_p1,
+        callbacks=make_callbacks(BEST_WEIGHTS),
         verbose=1,
     )
 
@@ -256,13 +225,11 @@ def train():
     if MODEL_TYPE == "efficientnet":
         print(f"\n[4/5] Phase 2 — Fine-tuning top-30 layers ({PHASE2_EPOCHS} epochs) …")
         model = unfreeze_top_layers(model, num_layers=30)
-        callbacks_p2 = make_callbacks(BEST_WEIGHTS, phase=2)
         history2 = model.fit(
-            X_train, y_train,
-            validation_data=(X_val, y_val),
+            train_gen,
+            validation_data=valid_gen,
             epochs=PHASE2_EPOCHS,
-            batch_size=BATCH_SIZE,
-            callbacks=callbacks_p2,
+            callbacks=make_callbacks(BEST_WEIGHTS),
             verbose=1,
         )
         histories.append(history2)
@@ -271,7 +238,7 @@ def train():
 
     # ── Evaluation ────────────────────────────────────────────────────────
     print("\n[5/5] Evaluating on test set …")
-    results = model.evaluate(X_test, y_test, verbose=1)
+    results = model.evaluate(test_gen, verbose=1)
     metric_names = model.metrics_names
     print("\n── Test Results ──────────────────────────")
     for name, value in zip(metric_names, results):
@@ -290,7 +257,6 @@ def train():
 
 
 if __name__ == "__main__":
-    # Reduce TensorFlow verbosity
     os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "2")
     tf.get_logger().setLevel("ERROR")
     train()

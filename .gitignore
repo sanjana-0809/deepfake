@@ -1,5 +1,47 @@
-venv/ 
-__pycache__/ 
-*.h5 
-*.pyc 
-archive/ 
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.pyc
+.Python
+
+# Virtual environment
+venv/
+env/
+.venv/
+
+# Trained model files (too large for GitHub)
+*.h5
+*.pb
+*.ckpt
+saved_model/
+
+# Training outputs
+training_history.png
+*.png
+
+# Dataset (too large for GitHub)
+archive/
+data/raw/
+
+# Streamlit uploads
+static/uploads/
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# Logs
+*.log
+logs/
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb

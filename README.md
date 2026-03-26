@@ -7,11 +7,11 @@
 ![Flask](https://img.shields.io/badge/Flask-3.0-lightgrey?style=flat-square&logo=flask)
 ![Docker](https://img.shields.io/badge/Docker-Ready-2496ED?style=flat-square&logo=docker)
 
-**An end-to-end deepfake image detection system combining EfficientNetB4 transfer learning with FFT-based frequency domain analysis — deployed as a dark-themed Streamlit dashboard and a Flask REST API.**
+**An end-to-end deepfake image detection system combining a custom Lightweight CNN with FFT-based frequency domain analysis — deployed as a dark-themed Streamlit dashboard and a Flask REST API.**
 
 ---
 
-## 🧠 Architecture Overview
+##  Architecture Overview
 
 ```
 Input Image
@@ -23,9 +23,9 @@ Input Image
          │  224×224 crop
          ▼
 ┌────────────────────┐     ┌──────────────────────┐
-│  EfficientNetB4    │     │  FFT Analysis         │
-│  + Custom Head     │     │  (frequency domain)   │
-│  CNN Score: 0.0–1.0│     │  FFT Score: 0.0–1.0   │
+│  Lightweight CNN   │     │  FFT Analysis         │
+│  4 Conv Blocks     │     │  (frequency domain)   │
+│  CNN Score: 0–1    │     │  FFT Score: 0–1       │
 └────────┬───────────┘     └──────────┬────────────┘
          │                            │
          └─────────────┬──────────────┘
@@ -50,13 +50,13 @@ Input Image
 ```
 deepfake-detection-system/
 ├── model/
-│   ├── model.py          ← EfficientNetB4 + lightweight CNN fallback
+│   ├── model.py          ← Lightweight CNN architecture
 │   ├── gradcam.py        ← Grad-CAM heatmap explainability
 │   ├── fft_analysis.py   ← FFT frequency domain GAN artifact detection
-│   └── train.py          ← Two-phase training with callbacks
+│   └── train.py          ← Memory-safe training with ImageDataGenerator
 ├── utils/
 │   ├── preprocess.py     ← Face detection pipeline (OpenCV + MTCNN)
-│   └── helpers.py        ← Scoring, hints, result formatting
+│   └── helpers.py        ← Ensemble scoring, hints, result formatting
 ├── app/
 │   ├── dashboard.py      ← Streamlit dashboard (main UI)
 │   └── api.py            ← Flask REST API
@@ -74,8 +74,10 @@ deepfake-detection-system/
 ### 1. Clone and install dependencies
 
 ```bash
-git clone https://github.com/yourname/deepshield.git
+git clone https://github.com/YOUR_USERNAME/deepshield.git
 cd deepshield
+python -m venv venv
+venv\Scripts\activate        # Windows
 pip install -r requirements.txt
 ```
 
@@ -94,21 +96,19 @@ archive/real_vs_fake/real-vs-fake/
 ### 3. Train the model
 
 ```bash
-python model/train.py
+python -m model.train
 ```
 
-This runs:
-- **Phase 1** — 10 epochs, head only (EfficientNetB4 base frozen)
-- **Phase 2** — 5 epochs, top-30 layers unfrozen, lr=1e-5
+Training uses `ImageDataGenerator` for memory-safe batch loading — no RAM overflow.
 
 Outputs:
-- `deepfake_efficientnet.h5`   ← final model
+- `deepfake_efficientnet.h5` ← final trained model
 - `deepfake_efficientnet_best.h5` ← best checkpoint
-- `training_history.png`       ← accuracy + loss curves
+- `training_history.png` ← accuracy + loss curves
 
 ---
 
-## 🚀 Running the Dashboard
+##  Running the Dashboard
 
 ```bash
 streamlit run app/dashboard.py
@@ -152,12 +152,12 @@ curl -X POST http://localhost:5000/predict \
 | `detection_hint` | `"High confidence — Face swap or GAN artifact detected"` |
 | `threshold_used` | `0.5` |
 | `face_found` | `true` |
-| `model_used` | `"EfficientNetB4"` |
+| `model_used` | `"LightweightCNN"` |
 
 Health check:
 ```bash
 curl http://localhost:5000/health
-# → {"status": "ok", "model": "EfficientNetB4"}
+# → {"status": "ok", "model": "LightweightCNN"}
 ```
 
 ---
@@ -179,13 +179,17 @@ docker run -p 5000:5000 deepshield python app/api.py
 
 ## 📊 Accuracy Benchmarks
 
-| Dataset           | Accuracy | AUC  | Precision | Recall |
-|-------------------|----------|------|-----------|--------|
-| Real vs Fake Faces | ____%   | ____ | ____%     | ____%  |
-| FaceForensics++ c23| ____%   | ____ | ____%     | ____%  |
-| Celeb-DF v2       | ____%    | ____ | ____%     | ____%  |
+Trained and evaluated on the [140K Real and Fake Faces](https://www.kaggle.com/datasets/xhlulu/140k-real-and-fake-faces) dataset:
 
-*Fill in after training.*
+| Metric | Score |
+|--------|-------|
+| **Accuracy** | **93.70%** |
+| **AUC** | **98.26%** |
+| **Precision** | **92.50%** |
+| **Recall** | **95.12%** |
+| **Loss** | 0.2391 |
+
+> Trained on 20,000 images (10K real + 10K fake) for 10 epochs using batch size 8 on CPU.
 
 ---
 
@@ -194,7 +198,7 @@ docker run -p 5000:5000 deepshield python app/api.py
 | Component | Technology |
 |-----------|------------|
 | Deep Learning | TensorFlow 2.13, Keras |
-| Backbone | EfficientNetB4 (ImageNet pretrained) |
+| Model | Custom Lightweight CNN (4 Conv blocks, ~490K params) |
 | Face Detection | OpenCV Haar Cascade + MTCNN |
 | Frequency Analysis | NumPy FFT + SciPy |
 | Explainability | Grad-CAM (custom implementation) |
@@ -205,22 +209,30 @@ docker run -p 5000:5000 deepshield python app/api.py
 
 ---
 
-## 💡 Why This Is Powerful (For Interviews)
+## 💡 Key Technical Highlights
 
 **1. Ensemble of two independent signals**
-The system doesn't rely solely on a neural network. FFT analysis exploits the fact that GAN/diffusion models leave periodic frequency artifacts invisible to the human eye but detectable in the power spectrum — a completely different signal path that reduces false negatives.
+The system combines CNN spatial analysis with FFT frequency domain analysis. GAN and diffusion models leave periodic frequency artifacts invisible to the human eye — FFT detects these independently of the neural network, reducing false negatives.
 
 **2. Explainable AI (XAI) with Grad-CAM**
-Most deepfake detectors are black boxes. Grad-CAM shows *exactly* which facial regions triggered the decision — crucial for forensic use cases and demonstrates knowledge of modern XAI techniques.
+Grad-CAM highlights exactly which facial regions triggered the FAKE decision — making the model interpretable rather than a black box. Critical for forensic use cases.
 
-**3. Two-phase transfer learning**
-Freezing the backbone first then fine-tuning avoids catastrophic forgetting. This is industry-standard practice for adapting pretrained models to specialised domains.
+**3. Memory-safe training with ImageDataGenerator**
+Images are loaded batch-by-batch from disk instead of all at once — enabling training on machines with limited RAM (tested on 8GB).
 
-**4. Production-ready deployment**
-Ships both a user-facing Streamlit dashboard and a machine-consumable REST API — the same model behind two different interfaces, demonstrating system design thinking.
+**4. Production-ready dual deployment**
+Ships both a user-facing Streamlit dashboard and a machine-consumable REST API — same model, two interfaces, demonstrating full-stack system design thinking.
 
 **5. Graceful degradation**
-If no face is detected, the system still produces a result using the full image rather than failing — important for real-world robustness with varied inputs.
+If no face is detected, the system analyses the full image instead of failing — important for real-world robustness.
+
+---
+
+## ⚠️ Known Limitations
+
+- Lower accuracy on diffusion-model generated images (Midjourney, DALL-E) — model trained primarily on GAN faces
+- CPU-only inference — predictions take 1–3 seconds per image
+- No video support — frame-by-frame analysis would need to be added
 
 ---
 

@@ -35,7 +35,7 @@ from model.fft_analysis import compute_fft_score
 # ──────────────────────────────────────────────────────────────────────────────
 
 app = Flask(__name__)
-CORS(app)   # allow cross-origin requests from any domain
+CORS(app)
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Model loading
@@ -58,8 +58,8 @@ def _load_model():
     from tensorflow.keras.models import load_model
 
     candidates = [
-        ("deepfake_efficientnet.h5",      "EfficientNetB4"),
-        ("deepfake_efficientnet_best.h5",  "EfficientNetB4 (best checkpoint)"),
+        ("deepfake_efficientnet.h5",      "LightweightCNN"),
+        ("deepfake_efficientnet_best.h5",  "LightweightCNN (best checkpoint)"),
         ("deepfake_cnn_model.h5",          "LightweightCNN"),
     ]
 
@@ -82,12 +82,6 @@ def _load_model():
 # ──────────────────────────────────────────────────────────────────────────────
 
 def _read_image_from_request() -> np.ndarray:
-    """
-    Read the uploaded file from request.files['file'] and return
-    a uint8 RGB numpy array.
-
-    Raises ValueError with a descriptive message on failure.
-    """
     if "file" not in request.files:
         raise ValueError("No file part found. Send the image as 'file' in multipart/form-data.")
 
@@ -114,15 +108,6 @@ def _read_image_from_request() -> np.ndarray:
 
 @app.route("/health", methods=["GET"])
 def health():
-    """
-    Health check endpoint.
-
-    Response:
-        {
-            "status": "ok",
-            "model": "EfficientNetB4"
-        }
-    """
     try:
         _load_model()
         return jsonify({"status": "ok", "model": _model_name}), 200
@@ -132,34 +117,6 @@ def health():
 
 @app.route("/predict", methods=["POST"])
 def predict():
-    """
-    Predict whether an uploaded image is FAKE or REAL.
-
-    Request:
-        POST /predict
-        Content-Type: multipart/form-data
-        Body field: file  (image file)
-        Optional query param: threshold  (float, default 0.5)
-
-    Response 200:
-        {
-            "label":          "FAKE",
-            "confidence":     "94.7%",
-            "final_score":    0.947,
-            "cnn_score":      0.961,
-            "fft_score":      0.901,
-            "detection_hint": "High confidence — Face swap or GAN artifact detected",
-            "threshold_used": 0.5,
-            "face_found":     true,
-            "model_used":     "EfficientNetB4"
-        }
-
-    Response 400:
-        { "error": "<description>" }
-
-    Response 500:
-        { "error": "<description>" }
-    """
     # ── Parse threshold ────────────────────────────────────────────────────
     try:
         threshold = float(request.args.get("threshold", 0.5))
@@ -182,7 +139,12 @@ def predict():
 
     try:
         img_array, face_found = preprocess_image(img_rgb, return_face_found=True)
-        cnn_score = float(model.predict(img_array, verbose=0)[0][0])
+
+        # IMPORTANT: flow_from_directory assigns fake=0, real=1 alphabetically.
+        # Model outputs close to 1.0 for REAL, close to 0.0 for FAKE.
+        # Invert so cnn_score = probability of being FAKE (high = fake).
+        raw_score = float(model.predict(img_array, verbose=0)[0][0])
+        cnn_score = 1.0 - raw_score   # ← inversion fix
 
         fft_result = compute_fft_score(img_rgb)
         fft_score = fft_result["fft_score"]
@@ -232,7 +194,6 @@ def method_not_allowed(e):
 # ──────────────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    import os
     os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "2")
     print("[API] Starting DeepShield Flask API on http://127.0.0.1:5000")
     print("[API] Endpoints: POST /predict | GET /health")
