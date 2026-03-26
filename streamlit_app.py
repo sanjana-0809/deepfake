@@ -1,16 +1,19 @@
 """
-dashboard.py — DeepShield Professional Dashboard
-Run: streamlit run app/dashboard.py
+streamlit_app.py — DeepShield Professional Dashboard
+Run: streamlit run streamlit_app.py
 """
 
-import os, sys, time, datetime
+import os
+import sys
+import time
+import datetime
 import numpy as np
 import pandas as pd
 import streamlit as st
 import plotly.graph_objects as go
 from PIL import Image
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+ROOT = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, ROOT)
 
 from utils.preprocess import preprocess_image
@@ -85,19 +88,20 @@ hr { border-color:#1e2433; }
 @st.cache_resource(show_spinner=False)
 def load_model():
     from tensorflow.keras.models import load_model as km
-    
+
     possible_paths = [
+        os.path.join(ROOT, "deepfake_efficientnet_best.h5"),
+        os.path.join(ROOT, "deepfake_efficientnet.h5"),
+        os.path.join(ROOT, "deepfake_cnn_model.h5"),
         "deepfake_efficientnet_best.h5",
         "deepfake_efficientnet.h5",
         "deepfake_cnn_model.h5",
-        os.path.join(ROOT, "deepfake_efficientnet_best.h5"),
-        os.path.join(ROOT, "deepfake_efficientnet.h5"),
     ]
-    
+
     for path in possible_paths:
         if os.path.isfile(path):
             return km(path)
-    
+
     return None
 
 
@@ -107,33 +111,70 @@ def analyse_image(pil_image, model, threshold):
     raw = float(model.predict(img_array, verbose=0)[0][0])
     cnn_score = 1.0 - raw
     fft_score = compute_fft_score(img_rgb)["fft_score"]
-    result = build_result(cnn_score=cnn_score, fft_score=fft_score,
-                          threshold=threshold, face_found=face_found)
-    try:    gradcam_img = generate_gradcam_overlay(model, img_array, img_rgb)
-    except: gradcam_img = img_rgb
+    result = build_result(
+        cnn_score=cnn_score,
+        fft_score=fft_score,
+        threshold=threshold,
+        face_found=face_found
+    )
+
+    try:
+        gradcam_img = generate_gradcam_overlay(model, img_array, img_rgb)
+    except Exception:
+        gradcam_img = img_rgb
+
     return result, gradcam_img, face_found
 
 
 def make_gauge(score, label):
     c = "#f87171" if label == "FAKE" else "#34d399"
     fig = go.Figure(go.Indicator(
-        mode="gauge+number", value=round(score*100,1),
-        number={"suffix":"%","font":{"color":c,"size":26}},
-        gauge={"axis":{"range":[0,100],"tickcolor":"#1e2433","tickfont":{"color":"#475569","size":9}},
-               "bar":{"color":c,"thickness":0.22},"bgcolor":"#0d1117","bordercolor":"#1e2433",
-               "steps":[{"range":[0,50],"color":"#0d1117"},{"range":[50,100],"color":"#0f172a"}],
-               "threshold":{"line":{"color":"#64748b","width":1.5},"thickness":0.7,"value":50}}))
-    fig.update_layout(height=180, margin=dict(t=8,b=0,l=8,r=8),
-                      paper_bgcolor="rgba(0,0,0,0)", font_color="#e2e8f0")
+        mode="gauge+number",
+        value=round(score * 100, 1),
+        number={"suffix": "%", "font": {"color": c, "size": 26}},
+        gauge={
+            "axis": {
+                "range": [0, 100],
+                "tickcolor": "#1e2433",
+                "tickfont": {"color": "#475569", "size": 9}
+            },
+            "bar": {"color": c, "thickness": 0.22},
+            "bgcolor": "#0d1117",
+            "bordercolor": "#1e2433",
+            "steps": [
+                {"range": [0, 50], "color": "#0d1117"},
+                {"range": [50, 100], "color": "#0f172a"}
+            ],
+            "threshold": {
+                "line": {"color": "#64748b", "width": 1.5},
+                "thickness": 0.7,
+                "value": 50
+            }
+        }
+    ))
+    fig.update_layout(
+        height=180,
+        margin=dict(t=8, b=0, l=8, r=8),
+        paper_bgcolor="rgba(0,0,0,0)",
+        font_color="#e2e8f0"
+    )
     return fig
 
 
 if "history" not in st.session_state:
     st.session_state.history = []
 
+if "sample_image" not in st.session_state:
+    st.session_state.sample_image = None
+
+if "sample_image_name" not in st.session_state:
+    st.session_state.sample_image_name = None
+
+
 def add_to_history(name, result):
     st.session_state.history.append({
-        "File": name, "Verdict": result["label"],
+        "File": name,
+        "Verdict": result["label"],
         "Confidence": result["confidence_percent"],
         "CNN": f"{result['cnn_score']:.3f}",
         "FFT": f"{result['fft_score']:.3f}",
@@ -147,6 +188,7 @@ with st.sidebar:
     st.markdown("### 🛡️ DeepShield")
     st.caption("AI-Powered Deepfake Detection")
     st.divider()
+
     st.markdown("""
     <div class="model-card">
       <div class="mname">⚡ Lightweight CNN</div>
@@ -157,17 +199,53 @@ with st.sidebar:
       <div class="mrow"><span class="mk">Parameters</span><span class="mv">490K · 1.87 MB</span></div>
     </div>
     """, unsafe_allow_html=True)
-    threshold = st.slider("⚖️ Decision Threshold", 0.10, 0.90, 0.50, 0.05,
-                          help="Score ≥ threshold → FAKE")
+
+    threshold = st.slider(
+        "⚖️ Decision Threshold",
+        0.10, 0.90, 0.50, 0.05,
+        help="Score ≥ threshold → FAKE"
+    )
+
     st.divider()
     st.markdown("**How it works**")
-    for n, t in [("1","Face detected via OpenCV + MTCNN"),
-                 ("2","CNN scores manipulation probability"),
-                 ("3","FFT detects GAN frequency artifacts"),
-                 ("4","Ensemble = 70% CNN + 30% FFT"),
-                 ("5","Grad-CAM shows suspicious regions")]:
-        st.markdown(f'<div class="step-item"><div class="step-num">{n}</div><div>{t}</div></div>',
-                    unsafe_allow_html=True)
+    for n, t in [
+        ("1", "Face detected via OpenCV + MTCNN"),
+        ("2", "CNN scores manipulation probability"),
+        ("3", "FFT detects GAN frequency artifacts"),
+        ("4", "Ensemble = 70% CNN + 30% FFT"),
+        ("5", "Grad-CAM shows suspicious regions")
+    ]:
+        st.markdown(
+            f'<div class="step-item"><div class="step-num">{n}</div><div>{t}</div></div>',
+            unsafe_allow_html=True
+        )
+
+    st.divider()
+    st.subheader("🧪 Try Sample Images")
+
+    sample_files = [
+        ("samples/real1.jpg", "Use real1.jpg"),
+        ("samples/fake1.jpg", "Use fake1.jpg"),
+    ]
+
+    any_sample = False
+    for file_path, button_label in sample_files:
+        full_path = os.path.join(ROOT, file_path)
+        if os.path.exists(full_path):
+            any_sample = True
+            if st.button(button_label, use_container_width=True):
+                st.session_state.sample_image = Image.open(full_path).convert("RGB")
+                st.session_state.sample_image_name = os.path.basename(file_path)
+
+    if st.session_state.sample_image is not None:
+        if st.button("Clear demo image", use_container_width=True):
+            st.session_state.sample_image = None
+            st.session_state.sample_image_name = None
+            st.rerun()
+
+    if not any_sample:
+        st.caption("Add sample images in the `samples/` folder to enable demo mode.")
+
     st.divider()
     st.caption("TensorFlow 2.13 · Lightweight CNN · Deepfake Detection · 2024")
 
@@ -175,9 +253,11 @@ with st.sidebar:
 # ── Load model ────────────────────────────────────────────────────────────────
 with st.spinner("Loading model …"):
     model = load_model()
+
 if model is None:
     st.error("⚠️ No trained model found. Run `python -m model.train` first.", icon="🚨")
     st.stop()
+
 
 # ── Header ────────────────────────────────────────────────────────────────────
 st.markdown("""
@@ -196,35 +276,63 @@ st.markdown("""
 
 tab1, tab2 = st.tabs(["🖼️  Single Image", "📂  Batch Mode"])
 
+
 # ── Tab 1 ─────────────────────────────────────────────────────────────────────
 with tab1:
-    uploaded = st.file_uploader("Upload a face image — JPG, PNG or WEBP",
-                                type=["jpg","jpeg","png","webp"])
-    if uploaded:
-        pil_image = Image.open(uploaded)
+    uploaded = st.file_uploader(
+        "Upload a face image — JPG, PNG or WEBP",
+        type=["jpg", "jpeg", "png", "webp"]
+    )
+
+    pil_image = None
+    image_name = None
+    using_demo = False
+
+    if uploaded is not None:
+        pil_image = Image.open(uploaded).convert("RGB")
+        image_name = uploaded.name
+        st.session_state.sample_image = None
+        st.session_state.sample_image_name = None
+    elif st.session_state.sample_image is not None:
+        pil_image = st.session_state.sample_image
+        image_name = st.session_state.sample_image_name or "demo_image.jpg"
+        using_demo = True
+
+    if pil_image is not None:
+        if using_demo:
+            st.info(f"Using demo image: {image_name}")
+
         bar = st.progress(0, text="Starting …")
-        for p,t in [(15,"Detecting face …"),(40,"Running CNN …"),(70,"FFT analysis …")]:
-            time.sleep(0.05); bar.progress(p, text=t)
-        result, gradcam_img, face_found = analyse_image(pil_image, model, threshold)
-        for p in [85,100]:
-            time.sleep(0.03); bar.progress(p, text="Generating Grad-CAM …")
+        for p, t in [(15, "Detecting face …"), (40, "Running CNN …"), (70, "FFT analysis …")]:
+            time.sleep(0.05)
+            bar.progress(p, text=t)
+
+        with st.spinner("🔍 Analyzing image... please wait"):
+            result, gradcam_img, face_found = analyse_image(pil_image, model, threshold)
+
+        for p in [85, 100]:
+            time.sleep(0.03)
+            bar.progress(p, text="Generating Grad-CAM …")
+
         bar.empty()
-        add_to_history(uploaded.name, result)
+        add_to_history(image_name, result)
 
-        label    = result["label"]
-        card_cls = "fake" if label=="FAKE" else "real"
-        icon     = "❌" if label=="FAKE" else "✅"
-        bar_cls  = "bar-fake" if label=="FAKE" else "bar-real"
-        conf_val = result["final_score"] if label=="FAKE" else 1-result["final_score"]
+        label = result["label"]
+        card_cls = "fake" if label == "FAKE" else "real"
+        icon = "❌" if label == "FAKE" else "✅"
+        bar_cls = "bar-fake" if label == "FAKE" else "bar-real"
+        conf_val = result["final_score"] if label == "FAKE" else 1 - result["final_score"]
 
-        c1, c2, c3 = st.columns([1,1,1.05], gap="large")
+        c1, c2, c3 = st.columns([1, 1, 1.05], gap="large")
 
         with c1:
             st.markdown('<div class="img-label">Original Image</div>', unsafe_allow_html=True)
             st.image(pil_image, use_column_width=True)
             if not face_found:
-                st.markdown('<div class="face-warn">⚠️ No face found — full image used</div>',
-                            unsafe_allow_html=True)
+                st.markdown(
+                    '<div class="face-warn">⚠️ No face found — full image used</div>',
+                    unsafe_allow_html=True
+                )
 
         with c2:
             st.markdown('<div class="img-label">Grad-CAM Heatmap</div>', unsafe_allow_html=True)
@@ -232,9 +340,10 @@ with tab1:
             st.caption("🔴 Red = regions that influenced the prediction")
 
         with c3:
-            cp = int(result["cnn_score"]*100)
-            fp = int(result["fft_score"]*100)
-            ep = int(result["final_score"]*100)
+            cp = int(result["cnn_score"] * 100)
+            fp = int(result["fft_score"] * 100)
+            ep = int(result["final_score"] * 100)
+
             st.markdown(f"""
             <div class="result-card {card_cls}">
               <div class="verdict {card_cls}">{label}<span class="verdict-icon">{icon}</span></div>
@@ -256,29 +365,43 @@ with tab1:
               <div class="thr-row"><span>Threshold</span><span>{result['threshold_used']}</span></div>
             </div>
             """, unsafe_allow_html=True)
+
             st.plotly_chart(make_gauge(conf_val, label), use_container_width=True)
+
 
 # ── Tab 2 ─────────────────────────────────────────────────────────────────────
 with tab2:
     st.markdown("Upload multiple images to analyse them all at once.")
-    batch_files = st.file_uploader("Select images", type=["jpg","jpeg","png","webp"],
-                                   accept_multiple_files=True,
-                                   label_visibility="collapsed", key="batch")
+    batch_files = st.file_uploader(
+        "Select images",
+        type=["jpg", "jpeg", "png", "webp"],
+        accept_multiple_files=True,
+        label_visibility="collapsed",
+        key="batch"
+    )
+
     if batch_files:
         results = []
         prog = st.progress(0, text="Processing …")
+
         for i, f in enumerate(batch_files):
-            prog.progress(int((i+1)/len(batch_files)*100),
-                          text=f"Analysing {f.name} ({i+1}/{len(batch_files)}) …")
-            res, _, _ = analyse_image(Image.open(f), model, threshold)
+            prog.progress(
+                int((i + 1) / len(batch_files) * 100),
+                text=f"Analysing {f.name} ({i+1}/{len(batch_files)}) …"
+            )
+
+            with st.spinner(f"Analyzing {f.name}..."):
+                res, _, _ = analyse_image(Image.open(f).convert("RGB"), model, threshold)
+
             res["image_name"] = f.name
             results.append(result_to_display_dict(res))
             add_to_history(f.name, res)
+
         prog.empty()
 
         df = pd.DataFrame(results)
-        n_fake = (df["Label"]=="FAKE").sum()
-        n_real = (df["Label"]=="REAL").sum()
+        n_fake = (df["Label"] == "FAKE").sum()
+        n_real = (df["Label"] == "REAL").sum()
 
         ca, cb, cc = st.columns(3)
         ca.metric("Total Images", len(df))
@@ -286,22 +409,35 @@ with tab2:
         cc.metric("Detected REAL", int(n_real))
         st.markdown("---")
 
-        def hl(v): return "color:#f87171;font-weight:600" if v=="FAKE" else "color:#34d399;font-weight:600"
+        def hl(v):
+            return "color:#f87171;font-weight:600" if v == "FAKE" else "color:#34d399;font-weight:600"
+
         st.dataframe(df.style.applymap(hl, subset=["Label"]), hide_index=True)
-        st.download_button("📥 Export as CSV", df.to_csv(index=False).encode(),
-                           "deepshield_results.csv", "text/csv")
+        st.download_button(
+            "📥 Export as CSV",
+            df.to_csv(index=False).encode(),
+            "deepshield_results.csv",
+            "text/csv"
+        )
+
 
 # ── Session History ───────────────────────────────────────────────────────────
 st.divider()
 st.markdown("#### 📋 Session History")
+
 if st.session_state.history:
     hdf = pd.DataFrame(st.session_state.history)
-    def hlv(v): return "color:#f87171;font-weight:600" if v=="FAKE" else "color:#34d399;font-weight:600"
+
+    def hlv(v):
+        return "color:#f87171;font-weight:600" if v == "FAKE" else "color:#34d399;font-weight:600"
+
     st.dataframe(hdf.style.applymap(hlv, subset=["Verdict"]), hide_index=True)
-    col_a, _ = st.columns([1,5])
+
+    col_a, _ = st.columns([1, 5])
     with col_a:
         if st.button("🗑️ Clear History"):
-            st.session_state.history = []; st.rerun()
+            st.session_state.history = []
+            st.rerun()
 else:
     st.caption("No images analysed yet this session.")
 
