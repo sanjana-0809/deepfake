@@ -12,7 +12,7 @@ env/
 .venv/
 
 # Trained model files (too large for GitHub)
-*.h5
+
 *.pb
 *.ckpt
 saved_model/
